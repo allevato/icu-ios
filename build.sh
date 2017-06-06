@@ -1,8 +1,8 @@
 
 ICU_ROOT=$(pwd)
 
-./configure_i386.sh
-mkdir -p build-i386 && cd build-i386 && gnumake
+./configure_host.sh
+mkdir -p build-host && cd build-host && gnumake
 
 cd $ICU_ROOT
 
@@ -26,6 +26,6 @@ mkdir -p build-arm64 && cd build-arm64 && gnumake
 
 cd $ICU_ROOT
 
-echo "Combining i386, x86 64, armv7, armv7s, and arm64 libraries."
+echo "Combining x86_64, armv7, armv7s, and arm64 libraries."
 
 ./make_universal.sh
