@@ -1,6 +1,8 @@
+// © 2016 and later: Unicode, Inc. and others.
+// License & terms of use: http://www.unicode.org/copyright.html
 /********************************************************************
  * COPYRIGHT:
- * Copyright (c) 2005-2014, International Business Machines Corporation and
+ * Copyright (c) 2005-2016, International Business Machines Corporation and
  * others. All Rights Reserved.
  ********************************************************************/
 /************************************************************************
@@ -16,6 +18,8 @@
 #include "unicode/utf8.h"
 #include "unicode/ustring.h"
 #include "unicode/uchriter.h"
+#include "cmemory.h"
+#include "cstr.h"
 #include "utxttest.h"
 
 static UBool  gFailed = FALSE;
@@ -61,6 +65,10 @@ UTextTest::runIndexedTest(int32_t index, UBool exec,
             if (exec) Ticket10562();  break;
         case 6: name = "Ticket10983";
             if (exec) Ticket10983();  break;
+        case 7: name = "Ticket12130";
+            if (exec) Ticket12130(); break;
+        case 8: name = "Ticket12888";
+            if (exec) Ticket12888(); break;
         default: name = "";          break;
     }
 }
@@ -1011,7 +1019,7 @@ void UTextTest::ErrorTest()
 
         // Check setIndex
         int32_t i;
-        int32_t startMapLimit = sizeof(startMap) / sizeof(int32_t);
+        int32_t startMapLimit = UPRV_LENGTHOF(startMap);
         for (i=0; i<startMapLimit; i++) {
             utext_setNativeIndex(ut, i);
             int64_t cpIndex = utext_getNativeIndex(ut);
@@ -1082,7 +1090,7 @@ void UTextTest::ErrorTest()
         UText *ut = utext_openUnicodeString(NULL, &u16str, &status);
         TEST_SUCCESS(status);
 
-        int32_t startMapLimit = sizeof(startMap) / sizeof(int32_t);
+        int32_t startMapLimit = UPRV_LENGTHOF(startMap);
         int i;
         for (i=0; i<startMapLimit; i++) {
             utext_setNativeIndex(ut, i);
@@ -1150,7 +1158,7 @@ void UTextTest::ErrorTest()
         UText *ut = utext_openReplaceable(NULL, &u16str, &status);
         TEST_SUCCESS(status);
 
-        int32_t startMapLimit = sizeof(startMap) / sizeof(int32_t);
+        int32_t startMapLimit = UPRV_LENGTHOF(startMap);
         int i;
         for (i=0; i<startMapLimit; i++) {
             utext_setNativeIndex(ut, i);
@@ -1500,4 +1508,140 @@ void UTextTest::Ticket10983() {
     TEST_ASSERT(status == U_INVALID_STATE_ERROR);
 
     utext_close(ut);
+}
+
+// Ticket 12130 - extract on a UText wrapping a null terminated UChar * string
+//                leaves the iteration position set incorrectly when the
+//                actual string length is not yet known.
+//
+//                The test text needs to be long enough that UText defers getting the length.
+
+void UTextTest::Ticket12130() {
+    UErrorCode status = U_ZERO_ERROR;
+    
+    const char *text8 =
+        "Fundamentally, computers just deal with numbers. They store letters and other characters "
+        "by assigning a number for each one. Before Unicode was invented, there were hundreds "
+        "of different encoding systems for assigning these numbers. No single encoding could "
+        "contain enough characters: for example, the European Union alone requires several "
+        "different encodings to cover all its languages. Even for a single language like "
+        "English no single encoding was adequate for all the letters, punctuation, and technical "
+        "symbols in common use.";
+
+    UnicodeString str(text8);
+    const UChar *ustr = str.getTerminatedBuffer();
+    UText ut = UTEXT_INITIALIZER;
+    utext_openUChars(&ut, ustr, -1, &status);
+    UChar extractBuffer[50];
+
+    for (int32_t startIdx = 0; startIdx<str.length(); ++startIdx) {
+        int32_t endIdx = startIdx + 20;
+
+        u_memset(extractBuffer, 0, UPRV_LENGTHOF(extractBuffer));
+        utext_extract(&ut, startIdx, endIdx, extractBuffer, UPRV_LENGTHOF(extractBuffer), &status);
+        if (U_FAILURE(status)) {
+            errln("%s:%d %s", __FILE__, __LINE__, u_errorName(status));
+            return;
+        }
+        int64_t ni  = utext_getNativeIndex(&ut);
+        int64_t expectedni = startIdx + 20;
+        if (expectedni > str.length()) {
+            expectedni = str.length();
+        }
+        if (expectedni != ni) {
+            errln("%s:%d utext_getNativeIndex() expected %d, got %d", __FILE__, __LINE__, expectedni, ni);
+        }
+        if (0 != str.tempSubString(startIdx, 20).compare(extractBuffer)) { 
+            errln("%s:%d utext_extract() failed. expected \"%s\", got \"%s\"",
+                    __FILE__, __LINE__, CStr(str.tempSubString(startIdx, 20))(), CStr(UnicodeString(extractBuffer))());
+        }
+    }
+    utext_close(&ut);
+
+    // Similar utext extract, this time with the string length provided to the UText in advance,
+    // and a buffer of larger than required capacity.
+   
+    utext_openUChars(&ut, ustr, str.length(), &status);
+    for (int32_t startIdx = 0; startIdx<str.length(); ++startIdx) {
+        int32_t endIdx = startIdx + 20;
+        u_memset(extractBuffer, 0, UPRV_LENGTHOF(extractBuffer));
+        utext_extract(&ut, startIdx, endIdx, extractBuffer, UPRV_LENGTHOF(extractBuffer), &status);
+        if (U_FAILURE(status)) {
+            errln("%s:%d %s", __FILE__, __LINE__, u_errorName(status));
+            return;
+        }
+        int64_t ni  = utext_getNativeIndex(&ut);
+        int64_t expectedni = startIdx + 20;
+        if (expectedni > str.length()) {
+            expectedni = str.length();
+        }
+        if (expectedni != ni) {
+            errln("%s:%d utext_getNativeIndex() expected %d, got %d", __FILE__, __LINE__, expectedni, ni);
+        }
+        if (0 != str.tempSubString(startIdx, 20).compare(extractBuffer)) { 
+            errln("%s:%d utext_extract() failed. expected \"%s\", got \"%s\"",
+                    __FILE__, __LINE__, CStr(str.tempSubString(startIdx, 20))(), CStr(UnicodeString(extractBuffer))());
+        }
+    }
+    utext_close(&ut);
+}
+
+// Ticket 12888: bad handling of illegal utf-8 containing many instances of the archaic, now illegal,
+//               six byte utf-8 forms. Original implementation had an assumption that
+//               there would be at most three utf-8 bytes per UTF-16 code unit.
+//               The five and six byte sequences map to a single replacement character.
+
+void UTextTest::Ticket12888() {
+    const char *badString = 
+            "\xfd\x80\x80\x80\x80\x80\xfd\x80\x80\x80\x80\x80\xfd\x80\x80\x80\x80\x80\xfd\x80\x80\x80\x80\x80"
+            "\xfd\x80\x80\x80\x80\x80\xfd\x80\x80\x80\x80\x80\xfd\x80\x80\x80\x80\x80\xfd\x80\x80\x80\x80\x80"
+            "\xfd\x80\x80\x80\x80\x80\xfd\x80\x80\x80\x80\x80\xfd\x80\x80\x80\x80\x80\xfd\x80\x80\x80\x80\x80"
+            "\xfd\x80\x80\x80\x80\x80\xfd\x80\x80\x80\x80\x80\xfd\x80\x80\x80\x80\x80\xfd\x80\x80\x80\x80\x80"
+            "\xfd\x80\x80\x80\x80\x80\xfd\x80\x80\x80\x80\x80\xfd\x80\x80\x80\x80\x80\xfd\x80\x80\x80\x80\x80"
+            "\xfd\x80\x80\x80\x80\x80\xfd\x80\x80\x80\x80\x80\xfd\x80\x80\x80\x80\x80\xfd\x80\x80\x80\x80\x80"
+            "\xfd\x80\x80\x80\x80\x80\xfd\x80\x80\x80\x80\x80\xfd\x80\x80\x80\x80\x80\xfd\x80\x80\x80\x80\x80"
+            "\xfd\x80\x80\x80\x80\x80\xfd\x80\x80\x80\x80\x80\xfd\x80\x80\x80\x80\x80\xfd\x80\x80\x80\x80\x80"
+            "\xfd\x80\x80\x80\x80\x80\xfd\x80\x80\x80\x80\x80\xfd\x80\x80\x80\x80\x80\xfd\x80\x80\x80\x80\x80"
+            "\xfd\x80\x80\x80\x80\x80\xfd\x80\x80\x80\x80\x80\xfd\x80\x80\x80\x80\x80\xfd\x80\x80\x80\x80\x80"
+            "\xfd\x80\x80\x80\x80\x80\xfd\x80\x80\x80\x80\x80\xfd\x80\x80\x80\x80\x80\xfd\x80\x80\x80\x80\x80"
+            "\xfd\x80\x80\x80\x80\x80\xfd\x80\x80\x80\x80\x80\xfd\x80\x80\x80\x80\x80\xfd\x80\x80\x80\x80\x80"
+            "\xfd\x80\x80\x80\x80\x80\xfd\x80\x80\x80\x80\x80\xfd\x80\x80\x80\x80\x80\xfd\x80\x80\x80\x80\x80"
+            "\xfd\x80\x80\x80\x80\x80\xfd\x80\x80\x80\x80\x80\xfd\x80\x80\x80\x80\x80\xfd\x80\x80\x80\x80\x80"
+            "\xfd\x80\x80\x80\x80\x80\xfd\x80\x80\x80\x80\x80\xfd\x80\x80\x80\x80\x80\xfd\x80\x80\x80\x80\x80"
+            "\xfd\x80\x80\x80\x80\x80\xfd\x80\x80\x80\x80\x80\xfd\x80\x80\x80\x80\x80\xfd\x80\x80\x80\x80\x80"
+            "\xfd\x80\x80\x80\x80\x80\xfd\x80\x80\x80\x80\x80\xfd\x80\x80\x80\x80\x80\xfd\x80\x80\x80\x80\x80"
+            "\xfd\x80\x80\x80\x80\x80\xfd\x80\x80\x80\x80\x80\xfd\x80\x80\x80\x80\x80\xfd\x80\x80\x80\x80\x80"
+            "\xfd\x80\x80\x80\x80\x80\xfd\x80\x80\x80\x80\x80\xfd\x80\x80\x80\x80\x80\xfd\x80\x80\x80\x80\x80"
+            "\xfd\x80\x80\x80\x80\x80\xfd\x80\x80\x80\x80\x80\xfd\x80\x80\x80\x80\x80\xfd\x80\x80\x80\x80\x80";
+
+    UErrorCode status = U_ZERO_ERROR;
+    LocalUTextPointer ut(utext_openUTF8(NULL, badString, -1, &status));
+    TEST_SUCCESS(status);
+    for (;;) {
+        UChar32 c = utext_next32(ut.getAlias());
+        if (c == U_SENTINEL) {
+            break;
+        }
+    }
+    int32_t endIdx = utext_getNativeIndex(ut.getAlias());
+    if (endIdx != (int32_t)strlen(badString)) {
+        errln("%s:%d expected=%d, actual=%d", __FILE__, __LINE__, strlen(badString), endIdx);
+        return;
+    }
+
+    for (int32_t prevIndex = endIdx; prevIndex>0;) {
+        UChar32 c = utext_previous32(ut.getAlias());
+        int32_t currentIndex = utext_getNativeIndex(ut.getAlias());
+        if (c != 0xfffd) {
+            errln("%s:%d (expected, actual, index) = (%d, %d, %d)\n",
+                    __FILE__, __LINE__, 0xfffd, c, currentIndex);
+            break;
+        }
+        if (currentIndex != prevIndex - 6) {
+            errln("%s:%d: wrong index. Expected, actual = %d, %d",
+                    __FILE__, __LINE__, prevIndex - 6, currentIndex);
+            break;
+        }
+        prevIndex = currentIndex;
+    }
 }

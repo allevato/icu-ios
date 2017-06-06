@@ -1,3 +1,5 @@
+// © 2016 and later: Unicode, Inc. and others.
+// License & terms of use: http://www.unicode.org/copyright.html
 /*
 *******************************************************************************
 *
@@ -6,7 +8,7 @@
 *
 *******************************************************************************
 *   file name:  gennorm2.cpp
-*   encoding:   US-ASCII
+*   encoding:   UTF-8
 *   tab size:   8 (not used)
 *   indentation:4
 *
@@ -142,7 +144,7 @@ main(int argc, char* argv[]) {
 
 #else
 
-    LocalPointer<Normalizer2DataBuilder> builder(new Normalizer2DataBuilder(errorCode));
+    LocalPointer<Normalizer2DataBuilder> builder(new Normalizer2DataBuilder(errorCode), errorCode);
     errorCode.assertSuccess();
 
     if(options[UNICODE_VERSION].doesOccur) {

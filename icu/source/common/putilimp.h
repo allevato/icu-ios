@@ -1,7 +1,9 @@
+// © 2016 and later: Unicode, Inc. and others.
+// License & terms of use: http://www.unicode.org/copyright.html
 /*
 ******************************************************************************
 *
-*   Copyright (C) 1997-2014, International Business Machines
+*   Copyright (C) 1997-2016, International Business Machines
 *   Corporation and others.  All Rights Reserved.
 *
 ******************************************************************************
@@ -85,7 +87,7 @@ typedef size_t uintptr_t;
 
 #ifdef U_HAVE_NL_LANGINFO_CODESET
     /* Use the predefined value. */
-#elif U_PLATFORM_HAS_WIN32_API || U_PLATFORM == U_PF_ANDROID || U_PLATFORM == U_PF_QNX
+#elif U_PLATFORM_USES_ONLY_WIN32_API || U_PLATFORM == U_PF_ANDROID || U_PLATFORM == U_PF_QNX
 #   define U_HAVE_NL_LANGINFO_CODESET 0
 #else
 #   define U_HAVE_NL_LANGINFO_CODESET 1
@@ -104,7 +106,10 @@ typedef size_t uintptr_t;
 #ifdef U_TZSET
     /* Use the predefined value. */
 #elif U_PLATFORM_USES_ONLY_WIN32_API
+    // UWP doesn't support tzset or environment variables for tz
+#if U_PLATFORM_HAS_WINUWP_API == 0
 #   define U_TZSET _tzset
+#endif
 #elif U_PLATFORM == U_PF_OS400
    /* not defined */
 #else
@@ -139,7 +144,10 @@ typedef size_t uintptr_t;
 #ifdef U_TZNAME
     /* Use the predefined value. */
 #elif U_PLATFORM_USES_ONLY_WIN32_API
+    /* not usable on all windows platforms */
+#if U_PLATFORM_HAS_WINUWP_API == 0
 #   define U_TZNAME _tzname
+#endif
 #elif U_PLATFORM == U_PF_OS400
    /* not defined */
 #else
@@ -148,7 +156,7 @@ typedef size_t uintptr_t;
 
 #ifdef U_HAVE_MMAP
     /* Use the predefined value. */
-#elif U_PLATFORM_HAS_WIN32_API
+#elif U_PLATFORM_USES_ONLY_WIN32_API
 #   define U_HAVE_MMAP 0
 #else
 #   define U_HAVE_MMAP 1
@@ -171,7 +179,7 @@ typedef size_t uintptr_t;
  */
 #ifdef U_HAVE_DIRENT_H
     /* Use the predefined value. */
-#elif U_PLATFORM_HAS_WIN32_API
+#elif U_PLATFORM_USES_ONLY_WIN32_API
 #   define U_HAVE_DIRENT_H 0
 #else
 #   define U_HAVE_DIRENT_H 1
@@ -212,7 +220,7 @@ typedef size_t uintptr_t;
  */
 #ifdef U_HAVE_STD_ATOMICS
     /* Use the predefined value. */
-#elif !defined(__cplusplus) || __cplusplus<201103L
+#elif U_CPLUSPLUS_VERSION < 11
     /* Not C++11, disable use of atomics */
 #   define U_HAVE_STD_ATOMICS 0
 #elif __clang__ && __clang_major__==3 && __clang_minor__<=1
@@ -229,25 +237,21 @@ typedef size_t uintptr_t;
 #endif
 
 
-/*===========================================================================*/
-/** @{ Code alignment                                                        */
-/*===========================================================================*/
-
 /**
- * \def U_ALIGN_CODE
- * This is used to align code fragments to a specific byte boundary.
- * This is useful for getting consistent performance test results.
- * @internal
+ *  \def U_HAVE_CLANG_ATOMICS
+ *  Defines whether Clang c11 style built-in atomics are avaialable.
+ *  These are used in preference to gcc atomics when both are available.
  */
-#ifdef U_ALIGN_CODE
+#ifdef U_HAVE_CLANG_ATOMICS
     /* Use the predefined value. */
-#elif defined(_MSC_VER) && defined(_M_IX86) && !defined(_MANAGED)
-#   define U_ALIGN_CODE(boundarySize) __asm  align boundarySize
+#elif __has_builtin(__c11_atomic_load) && \
+    __has_builtin(__c11_atomic_store) && \
+    __has_builtin(__c11_atomic_fetch_add) && \
+    __has_builtin(__c11_atomic_fetch_sub)
+#    define U_HAVE_CLANG_ATOMICS 1
 #else
-#   define U_ALIGN_CODE(boundarySize) 
+#    define U_HAVE_CLANG_ATOMICS 0
 #endif
-
-/** @} */
 
 /*===========================================================================*/
 /** @{ Programs used by ICU code                                             */
@@ -481,6 +485,12 @@ U_INTERNAL int32_t  U_EXPORT2 uprv_timezone(void);
  * @internal
  */
 U_INTERNAL const char* U_EXPORT2 uprv_tzname(int n);
+
+/**
+ * Reset the global tzname cache.
+ * @internal
+ */
+U_INTERNAL void uprv_tzname_clear_cache();
 
 /**
  * Get UTC (GMT) time measured in milliseconds since 0:00 on 1/1/1970.

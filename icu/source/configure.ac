@@ -1,12 +1,15 @@
 # -*-autoconf-*-
-AC_COPYRIGHT([ Copyright (c) 1999-2014, International Business Machines Corporation and others. All Rights Reserved. ])
+AC_COPYRIGHT([ Copyright (C) 2016 and later: Unicode, Inc. and others. License & terms of use: http://www.unicode.org/copyright.html ])
+# AC_COPYRIGHT([ Copyright (c) 1999-2015, International Business Machines Corporation and others. All Rights Reserved. ])
 # configure.in for ICU
 # Stephen F. Booth, heavily modified by Yves and others
 
-# Check for autoconf version
-AC_PREREQ(2.68)
+# NOTE: please use 'autoreconf' to rebuild, otherwise 'aclocal && autoconf'.
 
-# Process this file with autoconf to produce a configure script
+# Check for autoconf version
+AC_PREREQ(2.69)
+
+# Process this file with autoreconf to produce a configure script
 AC_INIT([ICU],
         m4_esyscmd_s([sed -n 's/^[ 	]*#[ 	]*define[ 	]*U_ICU_VERSION[ 	]*"\([^"]*\)".*/\1/p' "./common/unicode/uvernum.h]"),
         [http://icu-project.org/bugs],
@@ -368,6 +371,9 @@ AC_SUBST(U_DEFAULT_SHOW_DRAFT)
 
 AC_PROG_RANLIB
 
+# need sed
+AC_PROG_SED
+
 # look for 'ar' the proper way
 AC_CHECK_TOOL(AR, ar, false)
 
@@ -409,9 +415,25 @@ if test "x$ac_cv_header_elf_h" = "xyes"; then
     CONFIG_CPPFLAGS="$CONFIG_CPPFLAGS -DU_HAVE_ELF_H=1";
 fi
 
+# Enable/disable plugins
+AC_ARG_ENABLE(plugins,
+	[  --enable-plugins        enable plugins [default=no]],
+	[case "${enableval}" in
+		yes) plugins=true ;;
+		no)  plugins=false ;;
+		*) AC_MSG_ERROR(bad value ${enableval} for --enable-plugins) ;;
+		esac],
+	plugins=false)
+ICU_CONDITIONAL(PLUGINS, test "$plugins" = true)
+
+if test "x$plugins" = "xtrue"; then
+   UCONFIG_CPPFLAGS="$UCONFIG_CPPFLAGS -DUCONFIG_ENABLE_PLUGINS=1"
+fi
+
+
 U_ENABLE_DYLOAD=1
 enable=yes
-AC_MSG_CHECKING([whether to enable dynamic loading of plugins])
+AC_MSG_CHECKING([whether to enable dynamic loading of plugins. Ignored if plugins disabled.])
 AC_ARG_ENABLE(dyload,
     [  --disable-dyload        disable dynamic loading [default=no]],
     [ case "${enableval}" in
@@ -473,35 +495,27 @@ else
 fi
 
 if [[ "$GXX" = yes ]]; then
-    # if CXXFLAGS does not have a "-std=" setting, set it now to -std=c++0x,
+    # if CXXFLAGS does not have a "-std=" setting, set it now to -std=c++11,
     # and check that the compiler still works.
     if ! echo "$CXXFLAGS" | grep '\-std=' >/dev/null 2>&1; then
         OLD_CXXFLAGS="${CXXFLAGS}"
-        CXXFLAGS="$CXXFLAGS --std=c++0x"
+        CXXFLAGS="$CXXFLAGS -std=c++11"
         AC_MSG_CHECKING([[if we have a C++11 compiler]])
         AC_COMPILE_IFELSE([AC_LANG_PROGRAM([[]],[[]])],[cxx11_okay=yes],[cxx11_okay=no])
         AC_MSG_RESULT($cxx11_okay)
         if [[ $cxx11_okay = yes ]]; then
-            AC_MSG_NOTICE([Adding CXXFLAGS option --std=c++0x])
-            UCONFIG_CXXFLAGS="${UCONFIG_CXXFLAGS} --std=c++0x"
+            AC_MSG_NOTICE([Adding CXXFLAGS option -std=c++11])
+            UCONFIG_CXXFLAGS="${UCONFIG_CXXFLAGS} -std=c++11"
         else
             CXXFLAGS="$OLD_CXXFLAGS"
         fi
+        case "${host}" in
+        *-*-solaris*)
+            CXXFLAGS="$OLD_CXXFLAGS"
+            ;;
+        esac
     fi
 fi
-
-AC_MSG_CHECKING([[if #include <string> works]])
-AC_COMPILE_IFELSE([AC_LANG_PROGRAM([[#include <string>]], [[]])], [ac_cv_header_stdstring=yes], [ac_cv_header_stdstring=no])
-AC_MSG_RESULT($ac_cv_header_stdstring)
-if test $ac_cv_header_stdstring = yes
-then
-	U_HAVE_STD_STRING=1
-else
-        U_HAVE_STD_STRING=0
-        CONFIG_CPPFLAGS="${CONFIG_CPPFLAGS} -DU_HAVE_STD_STRING=0"
-fi
-AC_SUBST(U_HAVE_STD_STRING)
-
 
 AC_MSG_CHECKING([[if #include <atomic> works]])
 AC_COMPILE_IFELSE([AC_LANG_PROGRAM([[#include <atomic>]], [[]])], [ac_cv_header_atomic=yes], [ac_cv_header_atomic=no])
@@ -519,75 +533,71 @@ AC_SUBST(U_HAVE_ATOMIC)
 AC_LANG_POP([C++])
 
 # Always build ICU with multi-threading support.
-threads=true
-ICU_USE_THREADS=1
 OLD_LIBS=${LIBS}
 
-if test $threads = true; then
-  # For Compaq Tru64 (OSF1), we must look for pthread_attr_init
-  # and must do this before seaching for pthread_mutex_destroy, or
-  # we will pick up libpthreads.so not libpthread.so
-  # If this fails, then we must test for HPUX specials, before
-  # moving on to a more generic test
+# For Compaq Tru64 (OSF1), we must look for pthread_attr_init
+# and must do this before seaching for pthread_mutex_destroy, or
+# we will pick up libpthreads.so not libpthread.so
+# If this fails, then we must test for HPUX specials, before
+# moving on to a more generic test
 
-  AC_CHECK_LIB(pthread, pthread_attr_init)
-  if test $ac_cv_lib_pthread_pthread_attr_init = yes; then
-    ICU_USE_THREADS=1
+AC_CHECK_LIB(pthread, pthread_attr_init)
+if test $ac_cv_lib_pthread_pthread_attr_init = yes; then
+  :
+else
+  # Locate the right library for POSIX threads. We look for the
+  # symbols in the libraries first, because on Solaris libc provides
+  # pthread_create but libpthread has the real code :(
+  # AIX uses libpthreads instead of libpthread, and HP/UX uses libpthread
+  # FreeBSD users may need libpthread if they do not have libc_r.
+
+  AC_SEARCH_LIBS_FIRST(pthread_mutex_destroy, pthread pthreads c_r )
+
+  if test "$ac_cv_search_pthread_mutex_destroy" != no; then
+    :
   else
-    # Locate the right library for POSIX threads. We look for the
-    # symbols in the libraries first, because on Solaris libc provides
-    # pthread_create but libpthread has the real code :(
-    # AIX uses libpthreads instead of libpthread, and HP/UX uses libpthread
-    # FreeBSD users may need libpthread if they do not have libc_r.
-
-    AC_SEARCH_LIBS_FIRST(pthread_mutex_destroy, pthread pthreads c_r )
-
-    if test "$ac_cv_search_pthread_mutex_destroy" != no; then
-      ICU_USE_THREADS=1
-    else
-      # For HP 11
-      AC_CHECK_LIB(pthread, pthread_mutex_init)
-      if test $ac_cv_lib_pthread_pthread_mutex_init = yes; then
-        ICU_USE_THREADS=1
-      fi
-    fi
-
-    AC_CHECK_FUNC(pthread_mutex_lock)
-
-    if test $ac_cv_func_pthread_mutex_lock = yes; then
-      ICU_USE_THREADS=1
+    # For HP 11
+    AC_CHECK_LIB(pthread, pthread_mutex_init)
+    if test $ac_cv_lib_pthread_pthread_mutex_init = yes; then
+      :
     fi
   fi
-  # Check to see if we are using CygWin with MSVC
-  case "${host}" in
-  *-pc-cygwin*|*-pc-mingw*)
-    # For gcc, the thread options are set by mh-mingw/mh-cygwin
-    # For msvc, the thread options are set by runConfigureICU
-    ICU_USE_THREADS=1
-    ;;
-  *-*-hpux*)
-    # Add -mt because it does several nice things on newer compilers.
-    case "${icu_cv_host_frag}" in
-      mh-hpux-acc)
-        OLD_CXXFLAGS="${CXXFLAGS}"
-        CXXFLAGS="${CXXFLAGS} -mt"
-        if test x"`${CXX} ${CXXFLAGS} 2>&1`" != x""; then
-           CXXFLAGS="${OLD_CXXFLAGS}"
-        else
-           UCONFIG_CXXFLAGS="${UCONFIG_CXXFLAGS} -mt"
-        fi
-      ;;
-    esac
-    ;;
-  *-*-solaris*)
-    case "${icu_cv_host_frag}" in
-      mh-solaris)
-           LIBS="${LIBS} -mt"
-      ;;
-    esac
+
+  AC_CHECK_FUNC(pthread_mutex_lock)
+
+  if test $ac_cv_func_pthread_mutex_lock = yes; then
+    :
+  fi
+fi
+# Check to see if we are using CygWin with MSVC
+case "${host}" in
+*-pc-cygwin*|*-pc-mingw*)
+  # For gcc, the thread options are set by mh-mingw/mh-cygwin
+  # For msvc, the thread options are set by runConfigureICU
+  :
+  ;;
+*-*-hpux*)
+  # Add -mt because it does several nice things on newer compilers.
+  case "${icu_cv_host_frag}" in
+    mh-hpux-acc)
+      OLD_CXXFLAGS="${CXXFLAGS}"
+      CXXFLAGS="${CXXFLAGS} -mt"
+      if test x"`${CXX} ${CXXFLAGS} 2>&1`" != x""; then
+         CXXFLAGS="${OLD_CXXFLAGS}"
+      else
+         UCONFIG_CXXFLAGS="${UCONFIG_CXXFLAGS} -mt"
+      fi
     ;;
   esac
-fi
+  ;;
+*-*-solaris*)
+  case "${icu_cv_host_frag}" in
+    mh-solaris)
+         LIBS="${LIBS} -mt"
+    ;;
+  esac
+  ;;
+esac
 
 AC_ARG_ENABLE(weak-threads,
 	[  --enable-weak-threads   weakly reference the threading library [default=no]],
@@ -649,7 +659,10 @@ sparc-*-solaris*)
     GENCCODE_ASSEMBLY="-a sun"
     ;;
 ia64-*-hpux*)
-    GENCCODE_ASSEMBLY="-a aCC-ia64"
+# There has been some issues with building ICU data on HPUX ia64 aCC
+# when using the assemble code setting below.  For now, build without
+# assemble code for this platform.  This will increase the build time.   
+#    GENCCODE_ASSEMBLY="-a aCC-ia64"
     ;;
 esac
 AC_SUBST(GENCCODE_ASSEMBLY)
@@ -811,8 +824,8 @@ AC_SUBST(U_TZSET)
 
 U_HAVE_TZNAME=0
 AC_CACHE_CHECK(for tzname,ac_cv_var_tzname,
-[AC_LINK_IFELSE([AC_LANG_PROGRAM([[#ifndef __USE_POSIX
-#define __USE_POSIX
+[AC_LINK_IFELSE([AC_LANG_PROGRAM([[#ifndef _XOPEN_SOURCE
+#define _XOPEN_SOURCE
 #endif
 #include <stdlib.h>
 #include <time.h>
@@ -838,11 +851,8 @@ AC_SUBST(U_HAVE_TZNAME)
 AC_SUBST(U_TZNAME)
 
 AC_CACHE_CHECK(for timezone,ac_cv_var_timezone,
-[AC_LINK_IFELSE([AC_LANG_PROGRAM([#ifndef __USE_POSIX
-#define __USE_POSIX
-#endif
-#ifndef __USE_XOPEN
-#define __USE_XOPEN
+[AC_LINK_IFELSE([AC_LANG_PROGRAM([#ifndef _XOPEN_SOURCE
+#define _XOPEN_SOURCE
 #endif
 #include <time.h>
 ], [[timezone = 1;]])],[ac_cv_var_timezone=yes],[ac_cv_var_timezone=no])])
@@ -869,6 +879,17 @@ else
 fi
 AC_SUBST(U_HAVE_TIMEZONE)
 AC_SUBST(U_TIMEZONE)
+
+AC_CHECK_FUNC(strtod_l)
+if test x$ac_cv_func_strtod_l = xyes
+then
+     CONFIG_CPPFLAGS="${CONFIG_CPPFLAGS} -DU_HAVE_STRTOD_L=1"
+     U_HAVE_STRTOD_L=1
+else
+     CONFIG_CPPFLAGS="${CONFIG_CPPFLAGS} -DU_HAVE_STRTOD_L=0"
+     U_HAVE_STRTOD_L=0
+fi
+AC_SUBST(U_HAVE_STRTOD_L)
 
 # Checks for typedefs
 AC_CHECK_TYPE(int8_t,signed char)
@@ -1063,29 +1084,27 @@ AC_ARG_ENABLE(icuio,
 	icuio=true)
 ICU_CONDITIONAL(ICUIO, test "$icuio" = true)
 
-# Enable/disable layout
-AC_ARG_ENABLE(layout,
-	[  --enable-layout         build ICU's DEPRECATED layout library [default=yes]],
-	[case "${enableval}" in
-		yes) layout=true ;;
-		no)  layout=false ;;
-		*) AC_MSG_ERROR(bad value ${enableval} for --enable-layout) ;;
-		esac],
-	layout=true)
-ICU_CONDITIONAL(LAYOUT, test "$layout" = true)
-
 # Enable/disable layoutex
 AC_ARG_ENABLE(layoutex,
-	[  --enable-layoutex         build ICU's Paragraph Layout library [default=same-as-layout].
-            If not building with the ICU Layout library, then icu-le-hb must be installed via pkg-config.
-            See http://harfbuzz.org],
+	[  --enable-layoutex         build ICU's Paragraph Layout library [default=yes].
+            icu-le-hb must be installed via pkg-config. See http://harfbuzz.org],
 	[case "${enableval}" in
-		yes) layoutex=true ;;
+		yes) layoutex=$have_icu_le_hb ;;
 		no)  layoutex=false ;;
 		*) AC_MSG_ERROR(bad value ${enableval} for --enable-layoutex) ;;
 		esac],
-	layoutex=$layout)
+	layoutex=$have_icu_le_hb)
 ICU_CONDITIONAL(LAYOUTEX, test "$layoutex" = true)
+
+# Enable/disable layout
+AC_ARG_ENABLE(layout,
+	[],
+	[case "${enableval}" in
+		yes) AC_MSG_ERROR(The ICU Layout Engine has been removed.) ;;
+		no)   ;;
+		*) ;;
+		esac],
+	)
 
 # Enable/disable tools
 AC_ARG_ENABLE(tools,
@@ -1308,7 +1327,6 @@ AC_CONFIG_FILES([icudefs.mk \
 		stubdata/Makefile \
 		common/Makefile \
 		i18n/Makefile \
-		layout/Makefile \
 		layoutex/Makefile \
 		io/Makefile \
 		extra/Makefile \
@@ -1334,6 +1352,7 @@ AC_CONFIG_FILES([icudefs.mk \
 		tools/pkgdata/Makefile \
 		tools/tzcode/Makefile \
 		tools/gencfu/Makefile \
+		tools/escapesrc/Makefile \
 		test/Makefile \
 		test/compat/Makefile \
 		test/testdata/Makefile \

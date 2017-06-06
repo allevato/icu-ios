@@ -1,12 +1,15 @@
 <!--
 /*
+* Copyright (C) 2016 and later: Unicode, Inc. and others.
+* License & terms of use: http://www.unicode.org/copyright.html
 *******************************************************************************
-* Copyright (C) 2014, International Business Machines Corporation and         *
+* Copyright (C) 2015, International Business Machines Corporation and         *
 * others. All Rights Reserved.                                                *
 *******************************************************************************
 */
 -->
 <deprecates>
+	<alias from="ars" to="ar"/>
 	<alias from="de__PHONEBOOK" to="de"  rbpath="/collations/default" value="phonebook"/>
 	<alias from="es__TRADITIONAL" to="es" rbpath="/collations/default" value="traditional"/>
 	<alias from="in" to="id" />
@@ -24,7 +27,6 @@
 	<alias from="sr_BA" to="sr_Cyrl_BA" />
 	<alias from="sr_ME" to="sr_Cyrl_ME" />
 	<alias from="sr_RS" to="sr_Cyrl_RS" />
-	<alias from="ug_CN" to="ug_Arab_CN" />
 	<alias from="zh_CN" to="zh_Hans_CN" />
 	<alias from="zh_SG" to="zh_Hans_SG" />
 	<alias from="zh_HK" to="zh_Hant_HK" />
@@ -34,6 +36,5 @@
 	<emptyLocale locale="es_" />
 	<emptyLocale locale="pa_Guru" />
 	<emptyLocale locale="sr_Cyrl" />
-	<emptyLocale locale="ug_Arab" />
 	<emptyLocale locale="zh_Hans" />
 </deprecates>

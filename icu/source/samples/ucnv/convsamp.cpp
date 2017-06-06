@@ -1,6 +1,12 @@
-/**************************************************************************
+/*************************************************************************
 *
-*   Copyright (C) 2000-2013, International Business Machines
+*   © 2016 and later: Unicode, Inc. and others.
+*   License & terms of use: http://www.unicode.org/copyright.html#License
+*
+**************************************************************************
+**************************************************************************
+*
+*   Copyright (C) 2000-2016, International Business Machines
 *   Corporation and others.  All Rights Reserved.
 *
 ***************************************************************************
@@ -43,6 +49,9 @@
 #include "flagcb.h"
 
 /* Some utility functions */
+#ifndef UPRV_LENGTHOF
+#define UPRV_LENGTHOF(array) (int32_t)(sizeof(array)/sizeof((array)[0]))
+#endif
 
 static const UChar kNone[] = { 0x0000 };
 
@@ -1086,7 +1095,7 @@ void convsample_50() {
     conv = ucnv_open(encoding, &err);
     // do the conversion
     ucnv_toUnicode(conv,
-                   &target, output + sizeof(output)/U_SIZEOF_UCHAR,
+                   &target, output + UPRV_LENGTHOF(output),
                    &source, input + sizeof(input),
                    NULL, TRUE, &err);
     out = output;
