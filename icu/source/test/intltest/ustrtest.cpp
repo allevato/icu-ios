@@ -64,6 +64,7 @@ void UnicodeStringTest::runIndexedTest( int32_t index, UBool exec, const char* &
     TESTCASE_AUTO(TestUInt16Pointers);
     TESTCASE_AUTO(TestWCharPointers);
     TESTCASE_AUTO(TestNullPointers);
+    TESTCASE_AUTO(TestUnicodeStringInsertAppendToSelf);
     TESTCASE_AUTO_END;
 }
 
@@ -1123,27 +1124,25 @@ UnicodeStringTest::TestMiscellaneous()
         errln("UnicodeString(u[-1]).getTerminatedBuffer() returns a bad buffer");
     }
 
-    test1=UNICODE_STRING("la", 2);
-    test1.append(UNICODE_STRING(" lila", 5).getTerminatedBuffer(), 0, -1);
-    if(test1!=UNICODE_STRING("la lila", 7)) {
-        errln("UnicodeString::append(const UChar *, start, length) failed");
-    }
+    // NOTE: Some compilers will optimize u"la" to point to the same static memory
+    // as u" lila", offset by 3 code units
+    test1=UnicodeString(TRUE, u"la", 2);
+    test1.append(UnicodeString(TRUE, u" lila", 5).getTerminatedBuffer(), 0, -1);
+    assertEquals("UnicodeString::append(const UChar *, start, length) failed",
+        u"la lila", test1);
 
-    test1.insert(3, UNICODE_STRING("dudum ", 6), 0, INT32_MAX);
-    if(test1!=UNICODE_STRING("la dudum lila", 13)) {
-        errln("UnicodeString::insert(start, const UniStr &, start, length) failed");
-    }
+    test1.insert(3, UnicodeString(TRUE, u"dudum ", 6), 0, INT32_MAX);
+    assertEquals("UnicodeString::insert(start, const UniStr &, start, length) failed",
+        u"la dudum lila", test1);
 
     static const UChar ucs[]={ 0x68, 0x6d, 0x20, 0 };
     test1.insert(9, ucs, -1);
-    if(test1!=UNICODE_STRING("la dudum hm lila", 16)) {
-        errln("UnicodeString::insert(start, const UChar *, length) failed");
-    }
+    assertEquals("UnicodeString::insert(start, const UChar *, length) failed",
+        u"la dudum hm lila", test1);
 
     test1.replace(9, 2, (UChar)0x2b);
-    if(test1!=UNICODE_STRING("la dudum + lila", 15)) {
-        errln("UnicodeString::replace(start, length, UChar) failed");
-    }
+    assertEquals("UnicodeString::replace(start, length, UChar) failed",
+        u"la dudum + lila", test1);
 
     if(test1.hasMetaData() || UnicodeString().hasMetaData()) {
         errln("UnicodeString::hasMetaData() returns TRUE");
@@ -1881,9 +1880,9 @@ UnicodeStringTest::TestUTF8() {
         0xf3, 0xa0, 0x80, 0x80, 0xf4, 0x8f, 0xbf, 0xbf
     };
     static const UChar expected_utf16[] = {
-        0x41, 0xfffd,
-        0x61, 0xfffd,
-        0xfffd, 0x5a,
+        0x41, 0xfffd, 0xfffd, 0xfffd,
+        0x61, 0xfffd, 0xfffd, 0xfffd,
+        0xfffd,  0xfffd, 0xfffd, 0xfffd,0x5a,
         0xd900, 0xdc00, 0x7a,
         0xd800, 0xdc00, 0xd840, 0xdc00,
         0xdb40, 0xdc00, 0xdbff, 0xdfff
@@ -2160,7 +2159,6 @@ UnicodeStringTest::TestMoveSwap() {
     if(s6.getBuffer() != abc || s6.length() != 3) {
         errln("UnicodeString.moveFrom(alias) did not move");
     }
-#if U_HAVE_RVALUE_REFERENCES
     infoln("TestMoveSwap() with rvalue references");
     s1 = static_cast<UnicodeString &&>(s6);
     if(s1.getBuffer() != abc || s1.length() != 3) {
@@ -2170,10 +2168,6 @@ UnicodeStringTest::TestMoveSwap() {
     if(s7.getBuffer() != p || s7.length() != 100 || !s4.isBogus()) {
         errln("UnicodeString move constructor did not move");
     }
-#else
-    infoln("TestMoveSwap() without rvalue references");
-    UnicodeString s7;
-#endif
 
     // Move self assignment leaves the object valid but in an undefined state.
     // Do it to make sure there is no crash,
@@ -2252,4 +2246,60 @@ UnicodeStringTest::TestNullPointers() {
     UErrorCode errorCode = U_ZERO_ERROR;
     UnicodeString(u"def").extract(nullptr, 0, errorCode);
     assertEquals("buffer overflow extracting to nullptr", U_BUFFER_OVERFLOW_ERROR, errorCode);
+}
+
+void UnicodeStringTest::TestUnicodeStringInsertAppendToSelf() {
+    IcuTestErrorCode status(*this, "TestUnicodeStringAppendToSelf");
+
+    // Test append operation
+    UnicodeString str(u"foo ");
+    str.append(str);
+    str.append(str);
+    str.append(str);
+    assertEquals("", u"foo foo foo foo foo foo foo foo ", str);
+
+    // Test append operation with readonly alias to start
+    str = UnicodeString(TRUE, u"foo ", 4);
+    str.append(str);
+    str.append(str);
+    str.append(str);
+    assertEquals("", u"foo foo foo foo foo foo foo foo ", str);
+
+    // Test append operation with aliased substring
+    str = u"abcde";
+    UnicodeString sub = str.tempSubString(1, 2);
+    str.append(sub);
+    assertEquals("", u"abcdebc", str);
+
+    // Test append operation with double-aliased substring
+    str = UnicodeString(TRUE, u"abcde", 5);
+    sub = str.tempSubString(1, 2);
+    str.append(sub);
+    assertEquals("", u"abcdebc", str);
+
+    // Test insert operation
+    str = u"a-*b";
+    str.insert(2, str);
+    str.insert(4, str);
+    str.insert(8, str);
+    assertEquals("", u"a-a-a-a-a-a-a-a-*b*b*b*b*b*b*b*b", str);
+
+    // Test insert operation with readonly alias to start
+    str = UnicodeString(TRUE, u"a-*b", 4);
+    str.insert(2, str);
+    str.insert(4, str);
+    str.insert(8, str);
+    assertEquals("", u"a-a-a-a-a-a-a-a-*b*b*b*b*b*b*b*b", str);
+
+    // Test insert operation with aliased substring
+    str = u"abcde";
+    sub = str.tempSubString(1, 3);
+    str.insert(2, sub);
+    assertEquals("", u"abbcdcde", str);
+
+    // Test insert operation with double-aliased substring
+    str = UnicodeString(TRUE, u"abcde", 5);
+    sub = str.tempSubString(1, 3);
+    str.insert(2, sub);
+    assertEquals("", u"abbcdcde", str);
 }

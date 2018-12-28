@@ -66,6 +66,9 @@ messagepattern.h
 msgfmt.h
 normalizer2.h
 normlzr.h
+nounit.h
+numberformatter.h
+numberrangeformatter.h
 numfmt.h
 numsys.h
 parsepos.h
