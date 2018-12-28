@@ -1,3 +1,5 @@
+#!/usr/bin/env bash
+
 DEVELOPER="$(xcode-select --print-path)"
 SDKROOT="$(xcodebuild -version -sdk iphonesimulator | grep -E '^Path' | sed 's/Path: //')"
 ARCH="x86_64"

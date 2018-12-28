@@ -1,3 +1,5 @@
+#!/usr/bin/env bash
+
 ICU_PATH="$(pwd)/icu"
 
 mkdir -p build-host && cd build-host

@@ -1,3 +1,5 @@
+#!/usr/bin/env bash
+
 OUTPUT_PATH=build-universal
 
 mkdir -p "$OUTPUT_PATH"
