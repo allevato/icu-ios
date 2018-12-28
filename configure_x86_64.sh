@@ -18,4 +18,12 @@ mkdir -p $BUILD_PATH/$ARCH && cd $BUILD_PATH/$ARCH
 
 [ -e Makefile ] && make distclean
 
-sh $ICU_PATH/source/configure --host=i686-apple-darwin11 --enable-static --disable-shared -with-cross-build=$BUILD_PATH/host
+sh $ICU_PATH/source/configure \
+    --host=i686-apple-darwin11 \
+    --enable-static \
+    --disable-shared \
+    --disable-tools \
+    --disable-tests \
+    --disable-samples \
+    --with-data-packaging=static \
+    --with-cross-build=$BUILD_PATH/host

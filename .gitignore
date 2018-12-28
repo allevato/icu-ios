@@ -1,6 +1,1 @@
-build-armv7
-build-armv7s
-build-arm64
-build-host
-build-universal
-build-x86_64
+build/
