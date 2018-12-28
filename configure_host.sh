@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 
-ICU_PATH="$(pwd)/icu"
+BUILD_PATH="$(pwd)/build"
+ICU_PATH="$(pwd)/icu/icu4c"
 
-mkdir -p build-host && cd build-host
+mkdir -p $BUILD_PATH/host && cd $BUILD_PATH/host
 sh $ICU_PATH/source/configure --enable-static --disable-shared
